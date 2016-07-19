@@ -22,14 +22,16 @@ package org.carbondata.core.reader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import org.carbondata.common.factory.CarbonCommonFactory;
+import org.carbondata.core.cache.dictionary.ColumnDictionaryChunkWrapper;
 import org.carbondata.core.carbon.CarbonTableIdentifier;
 import org.carbondata.core.carbon.ColumnIdentifier;
 import org.carbondata.core.carbon.path.CarbonTablePath;
-import org.carbondata.core.constants.CarbonCommonConstants;
 import org.carbondata.core.service.PathService;
+import org.carbondata.core.util.CarbonUtil;
 import org.carbondata.format.ColumnDictionaryChunk;
 
 import org.apache.thrift.TBase;
@@ -115,7 +117,9 @@ public class CarbonDictionaryReaderImpl implements CarbonDictionaryReader {
         carbonDictionaryColumnMetaChunks.get(carbonDictionaryColumnMetaChunks.size() - 1);
     // end offset till where the dictionary file has to be read
     long endOffset = carbonDictionaryColumnMetaChunk.getEnd_offset();
-    return read(carbonDictionaryColumnMetaChunks, startOffset, endOffset);
+    List<ColumnDictionaryChunk> columnDictionaryChunks =
+        read(carbonDictionaryColumnMetaChunks, startOffset, endOffset);
+    return getDictionaryList(columnDictionaryChunks);
   }
 
   /**
@@ -126,13 +130,17 @@ public class CarbonDictionaryReaderImpl implements CarbonDictionaryReader {
    *
    * @param startOffset start offset of dictionary file
    * @param endOffset   end offset of dictionary file
-   * @return list of byte array. Each byte array is unique dictionary value
+   * @return iterator over byte array. Each byte array is unique dictionary value
    * @throws IOException if an I/O error occurs
    */
-  @Override public List<byte[]> read(long startOffset, long endOffset) throws IOException {
+  @Override public Iterator<byte[]> read(long startOffset, long endOffset) throws IOException {
     List<CarbonDictionaryColumnMetaChunk> carbonDictionaryColumnMetaChunks =
         readDictionaryMetadataFile();
-    return read(carbonDictionaryColumnMetaChunks, startOffset, endOffset);
+    List<ColumnDictionaryChunk> columnDictionaryChunks =
+        read(carbonDictionaryColumnMetaChunks, startOffset, endOffset);
+    Iterator<byte[]> columnDictionaryChunkWrapper =
+        new ColumnDictionaryChunkWrapper(columnDictionaryChunks);
+    return columnDictionaryChunkWrapper;
   }
 
   /**
@@ -154,11 +162,12 @@ public class CarbonDictionaryReaderImpl implements CarbonDictionaryReader {
    * @param startOffset                      start offset for dictionary data file
    * @param endOffset                        end offset till where data has
    *                                         to be read from dictionary data file
-   * @return list of byte array dictionary values
+   * @return list of byte column dictionary values
    * @throws IOException readDictionary file method throws IO exception
    */
-  private List<byte[]> read(List<CarbonDictionaryColumnMetaChunk> carbonDictionaryColumnMetaChunks,
-      long startOffset, long endOffset) throws IOException {
+  private List<ColumnDictionaryChunk> read(
+      List<CarbonDictionaryColumnMetaChunk> carbonDictionaryColumnMetaChunks, long startOffset,
+      long endOffset) throws IOException {
     // calculate the number of chunks to be read from dictionary file from start offset
     int dictionaryChunkCountsToBeRead =
         calculateTotalDictionaryChunkCountsToBeRead(carbonDictionaryColumnMetaChunks, startOffset,
@@ -168,9 +177,19 @@ public class CarbonDictionaryReaderImpl implements CarbonDictionaryReader {
     // read the required number of chunks from dictionary file
     List<ColumnDictionaryChunk> columnDictionaryChunks =
         readDictionaryFile(startOffset, dictionaryChunkCountsToBeRead);
-    // convert byte buffer list to byte array list of dictionary vlaues
+    return columnDictionaryChunks;
+  }
+
+  /**
+   * This method will put all the dictionary chunks into one list and return that list
+   *
+   * @param columnDictionaryChunks
+   * @return
+   */
+  private List<byte[]> getDictionaryList(List<ColumnDictionaryChunk> columnDictionaryChunks) {
+    // convert byte buffer list to byte array list of dictionary values
     List<byte[]> dictionaryValues =
-        new ArrayList<byte[]>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
+        new ArrayList<byte[]>(columnDictionaryChunks.size() * CarbonUtil.getDictionaryChunkSize());
     for (ColumnDictionaryChunk dictionaryChunk : columnDictionaryChunks) {
       convertAndFillByteBufferListToByteArrayList(dictionaryValues, dictionaryChunk.getValues());
     }
