@@ -43,7 +43,8 @@ public class CarbonRecordReader<T> extends RecordReader<Void, T> {
     tableBlockInfoList.add(
         new TableBlockInfo(carbonInputSplit.getPath().toString(), carbonInputSplit.getStart(),
             carbonInputSplit.getSegmentId(), carbonInputSplit.getLocations(),
-            carbonInputSplit.getLength()));
+            carbonInputSplit.getLength(), carbonInputSplit.getNumberOfBlocklets(), 0,
+            carbonInputSplit.getNumberOfBlocklets()));
     queryModel.setTableBlockInfos(tableBlockInfoList);
     readSupport
         .intialize(queryModel.getProjectionColumns(), queryModel.getAbsoluteTableIdentifier());

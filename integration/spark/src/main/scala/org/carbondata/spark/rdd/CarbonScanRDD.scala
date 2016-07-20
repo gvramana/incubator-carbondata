@@ -103,12 +103,15 @@ class CarbonScanRDD[V: ClassTag](
     if (!splits.isEmpty) {
       val carbonInputSplits = splits.asScala.map(_.asInstanceOf[CarbonInputSplit])
 
-      val blockList = carbonInputSplits.map(inputSplit =>
+      val blockListTemp = carbonInputSplits.map(inputSplit =>
         new TableBlockInfo(inputSplit.getPath.toString,
           inputSplit.getStart, inputSplit.getSegmentId,
-          inputSplit.getLocations, inputSplit.getLength
-        ).asInstanceOf[Distributable]
+          inputSplit.getLocations, inputSplit.getLength,
+          inputSplit.getNumberOfBlocklets, 0, inputSplit.getNumberOfBlocklets
+        )
       )
+      val blockList = CarbonLoaderUtil.
+        distributeBlockLets(blockListTemp.asJava, defaultParallelism).asScala
       if (blockList.nonEmpty) {
         // group blocks to nodes, tasks
         val startTime = System.currentTimeMillis
@@ -140,8 +143,8 @@ class CarbonScanRDD[V: ClassTag](
         val noOfNodes = nodeBlockMapping.size
         val noOfTasks = result.size()
         logInfo(s"Identified  no.of.Blocks: $noOfBlocks,"
-                + s"parallelism: $defaultParallelism , " +
-                s"no.of.nodes: $noOfNodes, no.of.tasks: $noOfTasks"
+          + s"parallelism: $defaultParallelism , " +
+          s"no.of.nodes: $noOfNodes, no.of.tasks: $noOfTasks"
         )
         statistic.addStatistics("Time taken to identify Block(s) to scan", System.currentTimeMillis)
         statisticRecorder.recordStatistics(statistic);
@@ -149,7 +152,7 @@ class CarbonScanRDD[V: ClassTag](
         result.asScala.foreach { r =>
           val cp = r.asInstanceOf[CarbonSparkPartition]
           logInfo(s"Node : " + cp.locations.toSeq.mkString(",")
-                  + ", No.Of Blocks : " + cp.tableBlockInfos.size()
+            + ", No.Of Blocks : " + cp.tableBlockInfos.size()
           )
         }
       } else {
@@ -166,82 +169,85 @@ class CarbonScanRDD[V: ClassTag](
     result.toArray(new Array[Partition](result.size()))
   }
 
-   override def compute(thepartition: Partition, context: TaskContext): Iterator[V] = {
-     val LOGGER = LogServiceFactory.getLogService(this.getClass.getName)
-     val iter = new Iterator[V] {
-       var rowIterator: CarbonIterator[Array[Any]] = _
-       var queryStartTime: Long = 0
-       try {
-         val carbonSparkPartition = thepartition.asInstanceOf[CarbonSparkPartition]
-         if(!carbonSparkPartition.tableBlockInfos.isEmpty) {
-           queryModel.setQueryId(queryModel.getQueryId + "_" + carbonSparkPartition.idx)
-           // fill table block info
-           queryModel.setTableBlockInfos(carbonSparkPartition.tableBlockInfos)
-           queryStartTime = System.currentTimeMillis
+  override def compute(thepartition: Partition, context: TaskContext): Iterator[V] = {
+    val LOGGER = LogServiceFactory.getLogService(this.getClass.getName)
+    val iter = new Iterator[V] {
+      var rowIterator: CarbonIterator[Array[Any]] = _
+      var queryStartTime: Long = 0
+      try {
+        val carbonSparkPartition = thepartition.asInstanceOf[CarbonSparkPartition]
+        if (!carbonSparkPartition.tableBlockInfos.isEmpty) {
+          queryModel.setQueryId(queryModel.getQueryId + "_" + carbonSparkPartition.idx)
+          // fill table block info
+          queryModel.setTableBlockInfos(carbonSparkPartition.tableBlockInfos)
+          queryStartTime = System.currentTimeMillis
 
-           val carbonPropertiesFilePath = System.getProperty("carbon.properties.filepath", null)
-           logInfo("*************************" + carbonPropertiesFilePath)
-           if (null == carbonPropertiesFilePath) {
-             System.setProperty("carbon.properties.filepath",
-               System.getProperty("user.dir") + '/' + "conf" + '/' + "carbon.properties")
-           }
-           // execute query
-           rowIterator = new ChunkRowIterator(
-             QueryExecutorFactory.getQueryExecutor(queryModel).execute(queryModel).
-               asInstanceOf[CarbonIterator[BatchResult]]).asInstanceOf[CarbonIterator[Array[Any]]]
+          val carbonPropertiesFilePath = System.getProperty("carbon.properties.filepath", null)
+          logInfo("*************************" + carbonPropertiesFilePath)
+          if (null == carbonPropertiesFilePath) {
+            System.setProperty("carbon.properties.filepath",
+              System.getProperty("user.dir") + '/' + "conf" + '/' + "carbon.properties"
+            )
+          }
+          // execute query
+          rowIterator = new ChunkRowIterator(
+            QueryExecutorFactory.getQueryExecutor(queryModel).execute(queryModel).
+              asInstanceOf[CarbonIterator[BatchResult]]
+          ).asInstanceOf[CarbonIterator[Array[Any]]]
 
-         }
-       } catch {
-         case e: Exception =>
-           LOGGER.error(e)
-           if (null != e.getMessage) {
-             sys.error("Exception occurred in query execution :: " + e.getMessage)
-           } else {
-             sys.error("Exception occurred in query execution.Please check logs.")
-           }
-       }
+        }
+      } catch {
+        case e: Exception =>
+          LOGGER.error(e)
+          if (null != e.getMessage) {
+            sys.error("Exception occurred in query execution :: " + e.getMessage)
+          } else {
+            sys.error("Exception occurred in query execution.Please check logs.")
+          }
+      }
 
-       var havePair = false
-       var finished = false
-       var recordCount = 0
+      var havePair = false
+      var finished = false
+      var recordCount = 0
 
-       override def hasNext: Boolean = {
-         if (!finished && !havePair) {
-           finished = (null == rowIterator) || (!rowIterator.hasNext)
-           havePair = !finished
-         }
-         if (finished) {
-           clearDictionaryCache(queryModel.getColumnToDictionaryMapping)
-           if(null!=queryModel.getStatisticsRecorder) {
-             queryModel.getStatisticsRecorder.logStatistics();
-           }
-         }
-         !finished
-       }
+      override def hasNext: Boolean = {
+        if (!finished && !havePair) {
+          finished = (null == rowIterator) || (!rowIterator.hasNext)
+          havePair = !finished
+        }
+        if (finished) {
+          clearDictionaryCache(queryModel.getColumnToDictionaryMapping)
+          if (null != queryModel.getStatisticsRecorder) {
+            queryModel.getStatisticsRecorder.logStatistics();
+          }
+        }
+        !finished
+      }
 
-       override def next(): V = {
-         if (!hasNext) {
-           throw new java.util.NoSuchElementException("End of stream")
-         }
-         havePair = false
-         recordCount += 1
-         if (queryModel.getLimit != -1 && recordCount >= queryModel.getLimit) {
-           clearDictionaryCache(queryModel.getColumnToDictionaryMapping)
-           if(null!=queryModel.getStatisticsRecorder) {
-             queryModel.getStatisticsRecorder.logStatistics();
-           }
-         }
-         keyClass.getValue(rowIterator.next())
-       }
-       def clearDictionaryCache(columnToDictionaryMap: java.util.Map[String, Dictionary]) = {
-         if (null != columnToDictionaryMap) {
-           org.carbondata.spark.util.CarbonQueryUtil
-             .clearColumnDictionaryCache(columnToDictionaryMap)
-         }
-       }
-     }
-     iter
-   }
+      override def next(): V = {
+        if (!hasNext) {
+          throw new java.util.NoSuchElementException("End of stream")
+        }
+        havePair = false
+        recordCount += 1
+        if (queryModel.getLimit != -1 && recordCount >= queryModel.getLimit) {
+          clearDictionaryCache(queryModel.getColumnToDictionaryMapping)
+          if (null != queryModel.getStatisticsRecorder) {
+            queryModel.getStatisticsRecorder.logStatistics();
+          }
+        }
+        keyClass.getValue(rowIterator.next())
+      }
+
+      def clearDictionaryCache(columnToDictionaryMap: java.util.Map[String, Dictionary]) = {
+        if (null != columnToDictionaryMap) {
+          org.carbondata.spark.util.CarbonQueryUtil
+            .clearColumnDictionaryCache(columnToDictionaryMap)
+        }
+      }
+    }
+    iter
+  }
 
    /**
     * Get the preferred locations where to launch this task.

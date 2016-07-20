@@ -36,6 +36,7 @@ import org.carbondata.core.carbon.CarbonDataLoadSchema;
 import org.carbondata.core.carbon.CarbonTableIdentifier;
 import org.carbondata.core.carbon.ColumnIdentifier;
 import org.carbondata.core.carbon.datastore.block.Distributable;
+import org.carbondata.core.carbon.datastore.block.TableBlockInfo;
 import org.carbondata.core.carbon.metadata.CarbonMetadata;
 import org.carbondata.core.carbon.metadata.datatype.DataType;
 import org.carbondata.core.carbon.metadata.schema.table.CarbonTable;
@@ -79,6 +80,24 @@ public final class CarbonLoaderUtil {
 
   private static final LogService LOGGER =
       LogServiceFactory.getLogService(CarbonLoaderUtil.class.getName());
+  /**
+   * minimum no of blocklet required for distribution
+   */
+  private static int minBlockLetsReqForDistribution = 0;
+
+  static {
+    String property = CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.CARBON_BLOCKLETDISTRIBUTION_MIN_REQUIRED_SIZE);
+    try {
+      minBlockLetsReqForDistribution = Integer.parseInt(property);
+    } catch (NumberFormatException ne) {
+      LOGGER.info(
+          "Invalid configuration for carbon.blockletdistribution.min.blocklet.size,"
+              + " Consisering the default value.");
+      minBlockLetsReqForDistribution =
+          CarbonCommonConstants.DEFAULT_CARBON_BLOCKLETDISTRIBUTION_MIN_REQUIRED_SIZE;
+    }
+  }
 
   /**
    * dfs.bytes-per-checksum
@@ -1391,5 +1410,69 @@ public final class CarbonLoaderUtil {
    */
   public static String[] getConfiguredLocalDirs(SparkConf conf) {
     return Utils.getConfiguredLocalDirs(conf);
+  }
+
+  /**
+   * method to distribute the blocklets of a block in multiple blocks
+   * @param blockInfoList
+   * @param defaultParallelism
+   * @return
+     */
+  public static List<Distributable> distributeBlockLets(List<TableBlockInfo> blockInfoList,
+      int defaultParallelism) {
+    LOGGER.info("No.Of Blocks before Blocklet distribution: " + blockInfoList.size());
+    List<Distributable> tableBlockInfos = new ArrayList<Distributable>();
+    int blockletPerNode = 1;
+    if (blockInfoList.size() < defaultParallelism) {
+      blockletPerNode = defaultParallelism / blockInfoList.size();
+    }
+    else {
+      for (TableBlockInfo tableBlockInfo : blockInfoList){
+        tableBlockInfos.add((Distributable)tableBlockInfo);
+      }
+      LOGGER.info("No.Of Blocks after Blocklet distribution: " + tableBlockInfos.size());
+      return tableBlockInfos;
+    }
+    int index = -1;
+    for (TableBlockInfo tableBlockInfo : blockInfoList) {
+      int noOfBlockLets = tableBlockInfo.getNoOfBlockLets();
+      LOGGER.info(
+          "No.Of blocklet : " + noOfBlockLets + ".Minimum blocklets required for distribution : "
+              + minBlockLetsReqForDistribution);
+      if (noOfBlockLets < minBlockLetsReqForDistribution) {
+        tableBlockInfos.add(++index, tableBlockInfo);
+        continue;
+      }
+      int count = 0;
+      TableBlockInfo tableBlockInfo1 = null;
+      while (count < noOfBlockLets) {
+        if (count % blockletPerNode == 0) {
+          tableBlockInfo1 =
+              new TableBlockInfo(tableBlockInfo.getFilePath(), tableBlockInfo.getBlockOffset(),
+                  tableBlockInfo.getSegmentId(), tableBlockInfo.getLocations(),
+                  tableBlockInfo.getBlockLength(), tableBlockInfo.getNoOfBlockLets(),
+                  count, count + 1);
+          tableBlockInfos.add(++index, tableBlockInfo1);
+          count++;
+        } else {
+          Distributable tableBlockInfo2 = tableBlockInfos.get(index);
+          int startBlockletNumber = ((TableBlockInfo) tableBlockInfo2).getStartBlockletNumber();
+          ((TableBlockInfo) tableBlockInfo2)
+              .setNumberOfBlockletToScan(count - startBlockletNumber + 1);
+          count++;
+        }
+      }
+    }
+    if (tableBlockInfos.size() == 0) {
+      {
+        for (TableBlockInfo tableBlockInfo : blockInfoList) {
+          tableBlockInfos.add(tableBlockInfo);
+        }
+        LOGGER.info("No.Of Blocks after Blocklet distribution: " + tableBlockInfos.size());
+        return tableBlockInfos;
+      }
+    }
+    LOGGER.info("No.Of Blocks after Blocklet distribution: " + tableBlockInfos.size());
+    return tableBlockInfos;
   }
 }

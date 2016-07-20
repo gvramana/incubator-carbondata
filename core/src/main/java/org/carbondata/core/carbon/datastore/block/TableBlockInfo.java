@@ -59,6 +59,19 @@ public class TableBlockInfo extends Distributable
 
   private String[] locations;
 
+  /**
+   * no of blockLets
+   */
+  private int noOfBlockLets = 0;
+
+  /**
+   * start blocklet number
+   */
+  private int startBlockletNumber;
+  /**
+   * end blocklet number
+   */
+  private int numberOfBlockletToScan;
 
   public TableBlockInfo(String filePath, long blockOffset, String segmentId, String[] locations,
       long blockLength) {
@@ -67,6 +80,18 @@ public class TableBlockInfo extends Distributable
     this.segmentId = segmentId;
     this.locations = locations;
     this.blockLength = blockLength;
+  }
+
+  public TableBlockInfo(String filePath, long blockOffset, String segmentId, String[] locations,
+      long blockLength, int noOfBlockLets, int startBlockletNumber, int numberOfBlockletToScan) {
+    this.filePath = FileFactory.getUpdatedFilePath(filePath);
+    this.blockOffset = blockOffset;
+    this.segmentId = segmentId;
+    this.locations = locations;
+    this.blockLength = blockLength;
+    this.noOfBlockLets = noOfBlockLets;
+    this.startBlockletNumber = startBlockletNumber;
+    this.numberOfBlockletToScan = numberOfBlockletToScan;
   }
 
   /**
@@ -201,4 +226,51 @@ public class TableBlockInfo extends Distributable
     return locations;
   }
 
+  /**
+   * returns the number of blockLets
+   * @return
+   */
+  public int getNoOfBlockLets() {
+    return noOfBlockLets;
+  }
+
+  /**
+   * sets the number of blockLets
+   * @param noOfBlockLets
+   */
+  public void setNoOfBlockLets(int noOfBlockLets) {
+    this.noOfBlockLets = noOfBlockLets;
+  }
+
+  /**
+   * returns start blocklet number
+   * @return
+   */
+  public int getStartBlockletNumber() {
+    return startBlockletNumber;
+  }
+
+  /**
+   * set start blocklet number
+   * @param startBlockletNumber
+   */
+  public void setStartBlockletNumber(int startBlockletNumber) {
+    this.startBlockletNumber = startBlockletNumber;
+  }
+
+  /**
+   * returns end blocklet number
+   * @return
+   */
+  public int getNumberOfBlockletToScan() {
+    return numberOfBlockletToScan;
+  }
+
+  /**
+   * set end blocklet number to be scaned
+   * @param numberOfBlockletToScan
+   */
+  public void setNumberOfBlockletToScan(int numberOfBlockletToScan) {
+    this.numberOfBlockletToScan = numberOfBlockletToScan;
+  }
 }

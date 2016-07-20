@@ -23,7 +23,7 @@ import scala.language.implicitConversions
 
 import org.apache.spark.{Logging, SparkContext}
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend
-import org.apache.spark.sql.catalyst.{CatalystConf, ParserDialect}
+import org.apache.spark.sql.catalyst.ParserDialect
 import org.apache.spark.sql.catalyst.analysis.{Analyzer, OverrideCatalog}
 import org.apache.spark.sql.catalyst.optimizer.Optimizer
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -32,7 +32,6 @@ import org.apache.spark.sql.execution.command.PartitionData
 import org.apache.spark.sql.execution.datasources.{PreInsertCastAndRename, PreWriteCheck}
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.optimizer.CarbonOptimizer
-import org.apache.spark.util.Utils
 
 import org.carbondata.common.logging.LogServiceFactory
 import org.carbondata.core.constants.CarbonCommonConstants

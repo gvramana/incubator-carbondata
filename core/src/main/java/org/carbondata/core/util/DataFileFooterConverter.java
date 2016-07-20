@@ -70,7 +70,7 @@ public class DataFileFooterConverter {
    * @throws IOException problem while reading the index file
    */
   public List<DataFileFooter> getIndexInfo(String filePath, List<TableBlockInfo> tableBlockInfoList)
-      throws IOException {
+      throws IOException, CarbonUtilException {
     CarbonIndexFileReader indexReader = new CarbonIndexFileReader();
     List<DataFileFooter> dataFileFooters = new ArrayList<DataFileFooter>();
     try {
@@ -93,10 +93,15 @@ public class DataFileFooterConverter {
         BlockIndex readBlockIndexInfo = indexReader.readBlockIndexInfo();
         blockletIndex = getBlockletIndex(readBlockIndexInfo.getBlock_index());
         dataFileFooter = new DataFileFooter();
+        TableBlockInfo tableBlockInfo = tableBlockInfoList.get(counter++);
+        DataFileFooter footer = CarbonUtil
+            .readMetadatFile(tableBlockInfo.getFilePath(), tableBlockInfo.getBlockOffset(),
+                tableBlockInfo.getBlockLength());
+        tableBlockInfo.setNoOfBlockLets(footer.getBlockletList().size());
         dataFileFooter.setBlockletIndex(blockletIndex);
         dataFileFooter.setColumnInTable(columnSchemaList);
         dataFileFooter.setNumberOfRows(readBlockIndexInfo.getNum_rows());
-        dataFileFooter.setTableBlockInfo(tableBlockInfoList.get(counter++));
+        dataFileFooter.setTableBlockInfo(tableBlockInfo);
         dataFileFooter.setSegmentInfo(segmentInfo);
         dataFileFooters.add(dataFileFooter);
       }

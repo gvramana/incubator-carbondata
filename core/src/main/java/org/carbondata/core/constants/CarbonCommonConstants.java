@@ -852,6 +852,17 @@ public final class CarbonCommonConstants {
    */
   public static final int COMPACTION_INMEMORY_RECORD_SIZE = 120000;
 
+  /**
+   * configure the minimum blocklet size eligible for blocklet distribution
+   */
+  public static final String CARBON_BLOCKLETDISTRIBUTION_MIN_REQUIRED_SIZE =
+      "carbon.blockletdistribution.min.blocklet.size";
+
+  /**
+   * default blocklet size eligible for blocklet distribution
+   */
+  public static final int DEFAULT_CARBON_BLOCKLETDISTRIBUTION_MIN_REQUIRED_SIZE = 10;
+
   private CarbonCommonConstants() {
   }
 }
