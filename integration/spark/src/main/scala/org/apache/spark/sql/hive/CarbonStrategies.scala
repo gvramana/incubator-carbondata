@@ -19,25 +19,22 @@ package org.apache.spark.sql.hive
 
 import java.util
 
-import scala.collection.JavaConverters._
-
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
-import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.TableIdentifier._
-import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, _}
 import org.apache.spark.sql.catalyst.planning.{PhysicalOperation, QueryPlanner}
 import org.apache.spark.sql.catalyst.plans.logical.{Filter => LogicalFilter, LogicalPlan}
-import org.apache.spark.sql.execution.{DescribeCommand => RunnableDescribeCommand, ExecutedCommand, Filter, Project, SparkPlan}
+import org.apache.spark.sql.catalyst.{TableIdentifier, expressions}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{DescribeCommand => LogicalDescribeCommand, LogicalRelation}
-import org.apache.spark.sql.hive.execution.{DescribeHiveTableCommand, DropTable, HiveNativeCommand}
+import org.apache.spark.sql.execution.{DescribeCommand => RunnableDescribeCommand, ExecutedCommand, Filter, Project, SparkPlan}
+import org.apache.spark.sql.hive.execution.{DropTable, HiveNativeCommand}
 import org.apache.spark.sql.optimizer.{CarbonAliasDecoderRelation, CarbonDecoderRelation}
 import org.apache.spark.sql.types.IntegerType
-
 import org.carbondata.common.logging.LogServiceFactory
 import org.carbondata.spark.exception.MalformedCarbonCommandException
+
+import scala.collection.JavaConverters._
 
 
 class CarbonStrategies(sqlContext: SQLContext) extends QueryPlanner[SparkPlan] {
@@ -88,35 +85,49 @@ class CarbonStrategies(sqlContext: SQLContext) extends QueryPlanner[SparkPlan] {
         relation.carbonRelation.metaData.carbonTable.getFactTableName.toLowerCase
       // Check out any expressions are there in project list. if they are present then we need to
       // decode them as well.
+
       val projectSet = AttributeSet(projectList.flatMap(_.references))
-      val scan = CarbonScan(projectSet.toSeq,
-        relation.carbonRelation,
-        predicates)(sqlContext)
+      val filterSet = AttributeSet(predicates.flatMap(_.references))
+
+      val scan = CarbonScan(projectSet.toSeq, relation.carbonRelation, predicates)(sqlContext)
       projectList.map {
         case attr: AttributeReference =>
         case Alias(attr: AttributeReference, _) =>
         case others =>
-          others.references.map{f =>
+          others.references.map { f =>
             val dictionary = relation.carbonRelation.metaData.dictionaryMap.get(f.name)
             if (dictionary.isDefined && dictionary.get) {
               scan.attributesNeedToDecode.add(f.asInstanceOf[AttributeReference])
             }
           }
       }
-      if (scan.attributesNeedToDecode.size() > 0) {
-        val decoder = getCarbonDecoder(logicalRelation,
-          sc,
-          tableName,
-          scan.attributesNeedToDecode.asScala.toSeq,
-          scan)
-        if (scan.unprocessedExprs.nonEmpty) {
-          val filterCondToAdd = scan.unprocessedExprs.reduceLeftOption(expressions.And)
-          Project(projectList, filterCondToAdd.map(Filter(_, decoder)).getOrElse(decoder))
+      val scanWithDecoder =
+        if (scan.attributesNeedToDecode.size() > 0) {
+          val decoder = getCarbonDecoder(logicalRelation,
+            sc,
+            tableName,
+            scan.attributesNeedToDecode.asScala.toSeq,
+            scan)
+          if (scan.unprocessedExprs.nonEmpty) {
+            val filterCondToAdd = scan.unprocessedExprs.reduceLeftOption(expressions.And)
+            filterCondToAdd.map(Filter(_, decoder)).getOrElse(decoder)
+          } else {
+            decoder
+          }
         } else {
-          Project(projectList, decoder)
+          scan
         }
+
+      if (projectList.map(_.toAttribute) == projectList &&
+          projectSet.size == projectList.size &&
+          filterSet.subsetOf(projectSet)) {
+        // copied from spark pruneFilterProjectRaw
+        // When it is possible to just use column pruning to get the right projection and
+        // when the columns of this projection are enough to evaluate all filter conditions,
+        // just do a scan with no extra project.
+        scanWithDecoder
       } else {
-        Project(projectList, scan)
+        Project(projectList, scanWithDecoder)
       }
     }
 

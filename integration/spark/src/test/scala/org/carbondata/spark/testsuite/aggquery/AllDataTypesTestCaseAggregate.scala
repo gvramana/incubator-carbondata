@@ -19,7 +19,6 @@
 
 package org.carbondata.spark.testsuite.aggquery
 
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.common.util.CarbonHiveContext._
 import org.apache.spark.sql.common.util.QueryTest
 import org.scalatest.BeforeAndAfterAll
@@ -36,6 +35,8 @@ class AllDataTypesTestCaseAggregate extends QueryTest with BeforeAndAfterAll {
   override def beforeAll {
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT, "dd-MM-yyyy")
+    sql("DROP TABLE IF EXISTS alldatatypestableAGG")
+    sql("DROP TABLE IF EXISTS alldatatypescubeAGG_hive")
     sql(
       "CREATE TABLE alldatatypestableAGG (empno int, empname String, designation String, doj " +
       "Timestamp, workgroupcategory int, workgroupcategoryname String, deptno int, deptname " +
