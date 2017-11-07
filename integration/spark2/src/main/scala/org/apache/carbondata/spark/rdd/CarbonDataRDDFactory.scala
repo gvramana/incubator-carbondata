@@ -54,7 +54,7 @@ import org.apache.carbondata.core.scan.partition.PartitionUtil
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatusManager}
 import org.apache.carbondata.core.util.{ByteUtil, CarbonProperties}
 import org.apache.carbondata.core.util.path.CarbonStorePath
-import org.apache.carbondata.events.{ListenerBus, LoadTablePostExecutionEvent}
+import org.apache.carbondata.events.{LoadTablePostExecutionEvent, OperationContext, OperationListenerBus}
 import org.apache.carbondata.processing.exception.DataLoadingException
 import org.apache.carbondata.processing.loading.FailureCauses
 import org.apache.carbondata.processing.loading.csvinput.BlockDetails
@@ -518,6 +518,7 @@ object CarbonDataRDDFactory {
       dataFrame: Option[DataFrame] = None,
       updateModel: Option[UpdateTableModel] = None): Unit = {
     val carbonTable = carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
+    val operationContext = new OperationContext
     // for handling of the segment Merging.
     def handleSegmentMerging(): Unit = {
       LOGGER.info(s"compaction need status is" +
@@ -541,7 +542,6 @@ object CarbonDataRDDFactory {
           storeLocation = System.getProperty("java.io.tmpdir")
         }
         storeLocation = storeLocation + "/carbonstore/" + System.nanoTime()
-
         val isConcurrentCompactionAllowed = CarbonProperties.getInstance()
             .getProperty(CarbonCommonConstants.ENABLE_CONCURRENT_COMPACTION,
               CarbonCommonConstants.DEFAULT_ENABLE_CONCURRENT_COMPACTION
@@ -1127,7 +1127,7 @@ object CarbonDataRDDFactory {
             LoadTablePostExecutionEvent(sqlContext.sparkSession,
               carbonTable.getCarbonTableIdentifier,
               carbonLoadModel)
-        ListenerBus.getInstance.fireEvent(loadTablePostExecutionEvent)
+        OperationListenerBus.getInstance.fireEvent(loadTablePostExecutionEvent, operationContext)
         updateStatus(status, loadStatus)
 
         if (CarbonCommonConstants.STORE_LOADSTATUS_PARTIAL_SUCCESS.equals(loadStatus)) {
@@ -1152,6 +1152,7 @@ object CarbonDataRDDFactory {
 
   /**
    * repartition the input data for partition table.
+ *
    * @param sqlContext
    * @param dataFrame
    * @param carbonLoadModel
